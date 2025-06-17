@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no" />
+<title>Mobile Friendly SVG Raycasting</title>
+<style>
+  body {
+    margin: 0;
+    background: #222;
+    color: #eee;
+    font-family: monospace;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    height: 100vh;
+  }
+  svg {
+    width: 100vw;
+    max-width: 400px;
+    height: auto;
+    background: #444;
+    border: 2px solid #666;
+    touch-action: none; /* prevent default scrolling on touch drag */
+    user-select: none;
+  }
+</style>
+</head>
+<body>
+
+<svg id="game" viewBox="0 0 400 400" >
+  <!-- Walls -->
+  <rect x="50" y="50" width="300" height="300" fill="none" stroke="#aaa" stroke-width="3"/>
+  <rect x="150" y="150" width="100" height="100" fill="#555" />
+  
+  <!-- Player -->
+  <circle id="player" cx="100" cy="350" r="8" fill="#0f0"/>
+  
+  <!-- Rays -->
+  <g id="rays"></g>
+</svg>
+
+<script>
+  const svg = document.getElementById('game');
+  const player = document.getElementById('player');
+  const raysGroup = document.getElementById('rays');
+  
+  const walls = [
+    {x:50, y:50, w:300, h:300},
+    {x:150, y:150, w:100, h:100}
+  ];
+  
+  let px = 100;
+  let py = 350;
+  let direction = -Math.PI / 2;
+  
+  function castRays() {
+    raysGroup.innerHTML = '';
+    const rayCount = 60;
+    const fov = Math.PI / 3;
+    for(let i = 0; i < rayCount; i++) {
+      let rayAngle = direction - fov/2 + (i / rayCount) * fov;
+      let rayLength = 0;
+      let hit = false;
+      const step = 2;
+      while(rayLength < 400 && !hit) {
+        rayLength += step;
+        let rx = px + rayLength * Math.cos(rayAngle);
+        let ry = py + rayLength * Math.sin(rayAngle);
+        for(let w of walls) {
+          if(rx >= w.x && rx <= w.x + w.w && ry >= w.y && ry <= w.y + w.h) {
+            hit = true;
+            rayLength -= step;
+            rx = px + rayLength * Math.cos(rayAngle);
+            ry = py + rayLength * Math.sin(rayAngle);
+            break;
+          }
+        }
+      }
+      const line = document.createElementNS("http://www.w3.org/2000/svg", "line");
+      line.setAttribute('x1', px);
+      line.setAttribute('y1', py);
+      line.setAttribute('x2', px + rayLength * Math.cos(rayAngle));
+      line.setAttribute('y2', py + rayLength * Math.sin(rayAngle));
+      line.setAttribute('stroke', 'yellow');
+      line.setAttribute('stroke-opacity', 0.3);
+      raysGroup.appendChild(line);
+    }
+  }
+  
+  castRays();
+  
+  // Touch controls for rotating player
+  let lastTouchX = null;
+  svg.addEventListener('touchstart', (e) => {
+    if(e.touches.length === 1) {
+      lastTouchX = e.touches[0].clientX;
+    }
+  });
+  
+  svg.addEventListener('touchmove', (e) => {
+    if(e.touches.length === 1 && lastTouchX !== null) {
+      const currentX = e.touches[0].clientX;
+      const deltaX = currentX - lastTouchX;
+      lastTouchX = currentX;
+      // Rotate direction based on horizontal movement, tweak sensitivity here
+      direction += deltaX * 0.005;
+      castRays();
+    }
+    e.preventDefault(); // prevent scrolling while dragging
+  });
+  
+  svg.addEventListener('touchend', () => {
+    lastTouchX = null;
+  });
+  
+  // Optional: also keep arrow key support for desktop
+  window.addEventListener('keydown', e => {
+    const rotSpeed = 0.1;
+    if(e.key === 'ArrowLeft') {
+      direction -= rotSpeed;
+    } else if(e.key === 'ArrowRight') {
+      direction += rotSpeed;
+    }
+    castRays();
+  });
+</script>
+
+</body>
+</html>
