@@ -1,46 +1,89 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" >
 <head>
-<meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no" />
-<title>Improved 3D SVG Raycasting with Movement</title>
-<style>
-  body {
-    margin: 0;
-    background: #222;
-    color: #eee;
-    font-family: monospace;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-  }
-  svg#view {
-    width: 100vw;
-    max-width: 600px;
-    height: 300px;
-    background: #111;
-    display: block;
-    user-select: none;
-    touch-action: none;
-  }
-  svg#map {
-    margin-top: 10px;
-    background: #444;
-    width: 400px;
-    height: 400px;
-    border: 2px solid #666;
-  }
-</style>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no" />
+  <title>Mobile Friendly 3D SVG Raycasting</title>
+  <style>
+    body {
+      margin: 0;
+      background: #222;
+      color: #eee;
+      font-family: monospace;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      height: 100vh;
+      overflow: hidden;
+    }
+    svg#view {
+      width: 100vw;
+      height: 50vh;
+      max-height: 320px;
+      background: #111;
+      user-select: none;
+      touch-action: none;
+    }
+    svg#map {
+      margin-top: 10px;
+      background: #444;
+      width: 90vw;
+      max-width: 400px;
+      height: 40vh;
+      max-height: 400px;
+      border: 2px solid #666;
+    }
+    /* Controls container */
+    #controls {
+      position: fixed;
+      bottom: 10px;
+      width: 100vw;
+      display: flex;
+      justify-content: space-around;
+      pointer-events: none;
+    }
+    /* Joystick areas */
+    .joystick {
+      width: 120px;
+      height: 120px;
+      background: rgba(255,255,255,0.1);
+      border-radius: 50%;
+      pointer-events: auto;
+      touch-action: none;
+      user-select: none;
+      position: relative;
+    }
+    /* Joystick knob */
+    .knob {
+      width: 60px;
+      height: 60px;
+      background: rgba(255,255,255,0.3);
+      border-radius: 50%;
+      position: absolute;
+      top: 30px;
+      left: 30px;
+      transition: background 0.2s;
+    }
+  </style>
 </head>
 <body>
 
 <svg id="view" viewBox="0 0 600 300"></svg>
-
 <svg id="map" viewBox="0 0 400 400">
-  <!-- Map grid will be drawn dynamically -->
+  <!-- map drawn dynamically -->
   <circle id="player-map" r="6" fill="#0f0"/>
   <line id="player-dir" stroke="#0f0" stroke-width="3"/>
 </svg>
+
+<!-- On-screen controls -->
+<div id="controls">
+  <div id="move-joystick" class="joystick">
+    <div class="knob"></div>
+  </div>
+  <div id="look-joystick" class="joystick">
+    <div class="knob"></div>
+  </div>
+</div>
 
 <script>
   const view = document.getElementById('view');
@@ -48,9 +91,14 @@
   const playerMap = document.getElementById('player-map');
   const playerDirLine = document.getElementById('player-dir');
 
-  // Map settings
+  const moveJoystick = document.getElementById('move-joystick');
+  const lookJoystick = document.getElementById('look-joystick');
+
+  const moveKnob = moveJoystick.querySelector('.knob');
+  const lookKnob = lookJoystick.querySelector('.knob');
+
+  // Map setup
   const tileSize = 40;
-  // Maze-like 10x10 map grid: 1=wall, 0=empty space
   const mapGrid = [
     [1,1,1,1,1,1,1,1,1,1],
     [1,0,0,0,1,0,0,0,0,1],
@@ -64,22 +112,20 @@
     [1,1,1,1,1,1,1,1,1,1]
   ];
 
-  // Player start position - in an empty tile, centered in tile
+  // Player start
   let px = tileSize * 1.5;
   let py = tileSize * 1.5;
-  let direction = 0; // facing right
-  const fov = Math.PI / 3; // 60 degrees
+  let direction = 0;
+  const fov = Math.PI / 3;
 
-  // Raycasting settings
+  // Raycasting config
   const sliceCount = 120;
   const viewWidth = 600;
   const viewHeight = 300;
 
-  // Draw map grid on SVG
+  // Draw map walls
   function drawMap() {
-    // Clear old grid
     [...mapSVG.querySelectorAll('.wall')].forEach(e => e.remove());
-
     for(let y=0; y<mapGrid.length; y++) {
       for(let x=0; x<mapGrid[y].length; x++) {
         if(mapGrid[y][x] === 1) {
@@ -96,6 +142,14 @@
     }
   }
 
+  function isWallAt(x, y) {
+    if(x < 0 || y < 0) return true;
+    const mx = Math.floor(x / tileSize);
+    const my = Math.floor(y / tileSize);
+    if(my >= mapGrid.length || mx >= mapGrid[0].length) return true;
+    return mapGrid[my][mx] === 1;
+  }
+
   function castRay(angle) {
     const maxDist = 600;
     const step = 2;
@@ -104,20 +158,9 @@
       dist += step;
       const rx = px + dist * Math.cos(angle);
       const ry = py + dist * Math.sin(angle);
-
-      if(isWallAt(rx, ry)) {
-        return dist;
-      }
+      if(isWallAt(rx, ry)) return dist;
     }
     return maxDist;
-  }
-
-  function isWallAt(x, y) {
-    if(x < 0 || y < 0) return true;
-    const mx = Math.floor(x / tileSize);
-    const my = Math.floor(y / tileSize);
-    if(my >= mapGrid.length || mx >= mapGrid[0].length) return true;
-    return mapGrid[my][mx] === 1;
   }
 
   function drawSlice(index, height, brightness) {
@@ -138,7 +181,7 @@
     for(let i = 0; i < sliceCount; i++) {
       let rayAngle = direction - fov / 2 + (i / sliceCount) * fov;
       let dist = castRay(rayAngle);
-      let correctedDist = dist * Math.cos(rayAngle - direction); // Fix fish-eye
+      let correctedDist = dist * Math.cos(rayAngle - direction);
       let wallHeight = Math.min(30000 / correctedDist, viewHeight);
       let brightness = Math.max(0, 255 - correctedDist * 0.6);
       brightness = Math.floor(brightness);
@@ -149,7 +192,6 @@
   function updateMap() {
     playerMap.setAttribute('cx', px);
     playerMap.setAttribute('cy', py);
-
     const dx = Math.cos(direction) * 20;
     const dy = Math.sin(direction) * 20;
     playerDirLine.setAttribute('x1', px);
@@ -158,18 +200,12 @@
     playerDirLine.setAttribute('y2', py + dy);
   }
 
-  function render() {
-    render3DView();
-    updateMap();
-  }
+  // Movement vars from joysticks
+  let moveX = 0; // forward/backward axis (-1 to 1)
+  let moveY = 0; // unused here (could be strafe)
+  let lookX = 0; // rotation axis (-1 to 1)
 
-  // Movement variables
-  let moveForward = false;
-  let moveBackward = false;
-  let rotateLeft = false;
-  let rotateRight = false;
-
-  // Movement speed and rotation speed
+  // Movement speed
   const moveSpeed = 2.5;
   const rotSpeed = 0.05;
 
@@ -177,8 +213,6 @@
   function movePlayer(dx, dy) {
     let newX = px + dx;
     let newY = py + dy;
-
-    // Simple collision: check all 4 corners of player "circle"
     const radius = 8;
     if(!isWallAt(newX + radius, newY + radius) &&
        !isWallAt(newX - radius, newY + radius) &&
@@ -189,55 +223,92 @@
     }
   }
 
-  // Game loop for smooth movement
-  function gameLoop() {
-    if(moveForward) movePlayer(Math.cos(direction) * moveSpeed, Math.sin(direction) * moveSpeed);
-    if(moveBackward) movePlayer(-Math.cos(direction) * moveSpeed, -Math.sin(direction) * moveSpeed);
-    if(rotateLeft) direction -= rotSpeed;
-    if(rotateRight) direction += rotSpeed;
+  // Joystick utility
+  function setupJoystick(container, onChange) {
+    let active = false;
+    let rect = container.getBoundingClientRect();
+    let centerX = rect.left + rect.width / 2;
+    let centerY = rect.top + rect.height / 2;
 
-    render();
+    function updateCenter() {
+      rect = container.getBoundingClientRect();
+      centerX = rect.left + rect.width / 2;
+      centerY = rect.top + rect.height / 2;
+    }
+
+    let pointerId = null;
+
+    function onPointerDown(e) {
+      if(pointerId !== null) return; // Already tracking
+      pointerId = e.pointerId;
+      active = true;
+      updateCenter();
+      onMove(e.clientX, e.clientY);
+      e.preventDefault();
+    }
+    function onPointerMove(e) {
+      if(!active || e.pointerId !== pointerId) return;
+      onMove(e.clientX, e.clientY);
+      e.preventDefault();
+    }
+    function onPointerUp(e) {
+      if(e.pointerId !== pointerId) return;
+      pointerId = null;
+      active = false;
+      onChange(0, 0); // reset joystick to center
+      e.preventDefault();
+    }
+
+    function onMove(x, y) {
+      let dx = x - centerX;
+      let dy = y - centerY;
+      const maxDist = rect.width / 2;
+      if(dx > maxDist) dx = maxDist;
+      if(dx < -maxDist) dx = -maxDist;
+      if(dy > maxDist) dy = maxDist;
+      if(dy < -maxDist) dy = -maxDist;
+      const normX = dx / maxDist;
+      const normY = dy / maxDist;
+      onChange(normX, normY);
+
+      // Move knob visually
+      const knob = container.querySelector('.knob');
+      knob.style.transform = `translate(${dx}px, ${dy}px)`;
+    }
+
+    container.addEventListener('pointerdown', onPointerDown);
+    window.addEventListener('pointermove', onPointerMove);
+    window.addEventListener('pointerup', onPointerUp);
+    window.addEventListener('pointercancel', onPointerUp);
+  }
+
+  setupJoystick(moveJoystick, (x,y) => {
+    // Y axis controls forward/backward
+    moveX = -y; // invert so pushing up is positive forward
+  });
+  setupJoystick(lookJoystick, (x,y) => {
+    // X axis controls rotation
+    lookX = x;
+  });
+
+  function gameLoop() {
+    // Rotate player
+    direction += lookX * rotSpeed;
+
+    // Move player forward/backward
+    const dx = Math.cos(direction) * moveX * moveSpeed;
+    const dy = Math.sin(direction) * moveX * moveSpeed;
+    movePlayer(dx, dy);
+
+    render3DView();
+    updateMap();
+
     requestAnimationFrame(gameLoop);
   }
 
-  // Keyboard controls
-  window.addEventListener('keydown', e => {
-    if(e.key === 'w' || e.key === 'ArrowUp') moveForward = true;
-    if(e.key === 's' || e.key === 'ArrowDown') moveBackward = true;
-    if(e.key === 'a' || e.key === 'ArrowLeft') rotateLeft = true;
-    if(e.key === 'd' || e.key === 'ArrowRight') rotateRight = true;
-  });
-  window.addEventListener('keyup', e => {
-    if(e.key === 'w' || e.key === 'ArrowUp') moveForward = false;
-    if(e.key === 's' || e.key === 'ArrowDown') moveBackward = false;
-    if(e.key === 'a' || e.key === 'ArrowLeft') rotateLeft = false;
-    if(e.key === 'd' || e.key === 'ArrowRight') rotateRight = false;
-  });
-
-  // Touch controls for rotation on #view
-  let lastTouchX = null;
-  view.addEventListener('touchstart', e => {
-    if(e.touches.length === 1) lastTouchX = e.touches[0].clientX;
-  });
-
-  view.addEventListener('touchmove', e => {
-    if(e.touches.length === 1 && lastTouchX !== null) {
-      const currentX = e.touches[0].clientX;
-      const deltaX = currentX - lastTouchX;
-      lastTouchX = currentX;
-      direction += deltaX * 0.005;
-    }
-    e.preventDefault();
-  });
-
-  view.addEventListener('touchend', e => {
-    lastTouchX = null;
-  });
-
-  // Draw map and start game loop
   drawMap();
-  render();
   gameLoop();
+
 </script>
 
 </body>
