@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no" />
-<title>3D Raycasting Maze - One Joystick & Slow Camera</title>
+<title>3D Raycasting Maze - One Joystick & Minimap</title>
 <style>
   body, html {
     margin: 0; padding: 0; overflow: hidden; background: #111;
@@ -45,6 +45,7 @@
   let fov = Math.PI / 3;
   let exitX, exitY;
 
+  // Maze generation (recursive backtracking)
   function generateMaze(w, h) {
     const maze = [];
     for (let y=0; y<h; y++) {
@@ -116,12 +117,13 @@
     py = 1 * tileSize + tileSize/2;
     direction = 0;
 
-    for(let y=mapHeight-2; y>0; y--) {
+    // Find exit position (last reachable cell)
+    outer: for(let y=mapHeight-2; y>0; y--) {
       for(let x=mapWidth-2; x>0; x--) {
         if(maze[y][x] === 1) {
           exitX = x;
           exitY = y;
-          return;
+          break outer;
         }
       }
     }
@@ -152,10 +154,10 @@
     const offsetY = hitY - cellY * tileSize;
 
     let color;
-    if(offsetX < 2) color = palette[0];          // left wall
-    else if(offsetX > tileSize - 2) color = palette[1];  // right wall
-    else if(offsetY < 2) color = palette[2];    // top wall
-    else if(offsetY > tileSize - 2) color = palette[1];  // bottom wall
+    if(offsetX < 2) color = palette[0];
+    else if(offsetX > tileSize - 2) color = palette[1];
+    else if(offsetY < 2) color = palette[2];
+    else if(offsetY > tileSize - 2) color = palette[1];
     else color = palette[0];
 
     return {dist, color};
@@ -167,6 +169,7 @@
     let newX = px + dx;
     let newY = py + dy;
 
+    // Check 4 corners for collision
     if(!isWallAt(newX + radius, newY + radius) &&
        !isWallAt(newX - radius, newY + radius) &&
        !isWallAt(newX + radius, newY - radius) &&
@@ -176,6 +179,7 @@
       return;
     }
 
+    // Try horizontal only
     newX = px + dx;
     newY = py;
     if(!isWallAt(newX + radius, newY + radius) &&
@@ -186,6 +190,7 @@
       return;
     }
 
+    // Try vertical only
     newX = px;
     newY = py + dy;
     if(!isWallAt(newX + radius, newY + radius) &&
@@ -212,6 +217,7 @@
   // One joystick on bottom left (movement)
   let joystick = {
     active: false,
+    id: null,
     startX: 0,
     startY: 0,
     x: 0,
@@ -221,6 +227,7 @@
   // Track right half dragging for camera rotation
   let cameraDrag = {
     active: false,
+    id: null,
     lastX: 0
   };
 
@@ -228,12 +235,14 @@
     for(let touch of e.changedTouches) {
       if(touch.clientX < width/2 && touch.clientY > height/2 && !joystick.active) {
         joystick.active = true;
+        joystick.id = touch.identifier;
         joystick.startX = touch.clientX;
         joystick.startY = touch.clientY;
         joystick.x = touch.clientX;
         joystick.y = touch.clientY;
       } else if(touch.clientX >= width/2 && !cameraDrag.active) {
         cameraDrag.active = true;
+        cameraDrag.id = touch.identifier;
         cameraDrag.lastX = touch.clientX;
       }
     }
@@ -241,11 +250,11 @@
 
   canvas.addEventListener('touchmove', e => {
     for(let touch of e.changedTouches) {
-      if(joystick.active && touch.clientX === joystick.x && touch.clientY === joystick.y) {
+      if(joystick.active && touch.identifier === joystick.id) {
         joystick.x = touch.clientX;
         joystick.y = touch.clientY;
         e.preventDefault();
-      } else if(cameraDrag.active && touch.clientX >= width/2) {
+      } else if(cameraDrag.active && touch.identifier === cameraDrag.id) {
         let dx = touch.clientX - cameraDrag.lastX;
         direction += dx * 0.02; // VERY LOW sensitivity
         cameraDrag.lastX = touch.clientX;
@@ -256,114 +265,163 @@
 
   canvas.addEventListener('touchend', e => {
     for(let touch of e.changedTouches) {
-      if(joystick.active && touch.clientX === joystick.x && touch.clientY === joystick.y) {
+      if(joystick.active && touch.identifier === joystick.id) {
         joystick.active = false;
+        joystick.id = null;
       }
-      if(cameraDrag.active) {
+      if(cameraDrag.active && touch.identifier === cameraDrag.id) {
         cameraDrag.active = false;
+        cameraDrag.id = null;
       }
     }
-  });
+  }, {passive:false});
 
-  function update(dt) {
-    const speed = 120 * dt;
-    const rotationSpeed = 1.2 * dt; // keyboard rotation speed
-
-    // Keyboard rotation
-    if(keys['a'] || keys['arrowleft']) {
-      direction -= rotationSpeed;
-    }
-    if(keys['d'] || keys['arrowright']) {
-      direction += rotationSpeed;
-    }
-
-    // Keyboard movement forward/back + strafe left/right
-    let moveX = 0;
-    let moveY = 0;
-    if(keys['w'] || keys['arrowup']) {
-      moveX += Math.cos(direction) * speed;
-      moveY += Math.sin(direction) * speed;
-    }
-    if(keys['s'] || keys['arrowdown']) {
-      moveX -= Math.cos(direction) * speed;
-      moveY -= Math.sin(direction) * speed;
-    }
-    if(keys['q']) { // strafe left
-      moveX += Math.cos(direction - Math.PI/2) * speed;
-      moveY += Math.sin(direction - Math.PI/2) * speed;
-    }
-    if(keys['e']) { // strafe right
-      moveX += Math.cos(direction + Math.PI/2) * speed;
-      moveY += Math.sin(direction + Math.PI/2) * speed;
-    }
-    movePlayer(moveX, moveY);
-
-    // Joystick movement
+  function update() {
+    // Movement from joystick
     if(joystick.active) {
-      const dx = (joystick.x - joystick.startX) / 50;
-      const dy = (joystick.y - joystick.startY) / 50;
+      let dx = joystick.x - joystick.startX;
+      let dy = joystick.y - joystick.startY;
+      const maxDist = 60;
+      if(dx*dx + dy*dy > maxDist*maxDist) {
+        let angle = Math.atan2(dy, dx);
+        dx = Math.cos(angle)*maxDist;
+        dy = Math.sin(angle)*maxDist;
+      }
+      // Normalize and apply small speed
+      const speed = 2.5;
+      const len = Math.sqrt(dx*dx + dy*dy);
+      if(len > 10) {
+        let moveX = (dx / maxDist) * speed;
+        let moveY = (dy / maxDist) * speed;
 
-      const forward = -dy * speed;
-      const strafe = dx * speed;
+        // Convert joystick direction relative to player view direction
+        // Y-axis on screen is down, invert dy for forward/back
+        let forward = -(moveY);
+        let strafe = moveX;
 
-      movePlayer(
-        Math.cos(direction) * forward + Math.cos(direction + Math.PI/2) * strafe,
-        Math.sin(direction) * forward + Math.sin(direction + Math.PI/2) * strafe
-      );
+        let movex = Math.cos(direction)*forward + Math.sin(direction)*strafe;
+        let movey = Math.sin(direction)*forward - Math.cos(direction)*strafe;
+
+        movePlayer(movex, movey);
+      }
+    }
+
+    // Keyboard support (WASD or arrows)
+    let forward = 0, strafe = 0;
+    if(keys['w'] || keys['arrowup']) forward += 2.5;
+    if(keys['s'] || keys['arrowdown']) forward -= 2.5;
+    if(keys['a'] || keys['arrowleft']) strafe -= 2.5;
+    if(keys['d'] || keys['arrowright']) strafe += 2.5;
+
+    if(forward !== 0 || strafe !== 0) {
+      let movex = Math.cos(direction)*forward + Math.sin(direction)*strafe;
+      let movey = Math.sin(direction)*forward - Math.cos(direction)*strafe;
+      movePlayer(movex, movey);
     }
   }
 
-  function render() {
+  function drawJoystick() {
+    if(!joystick.active) return;
+    ctx.save();
+    ctx.globalAlpha = 0.4;
+    ctx.fillStyle = '#666';
+    ctx.beginPath();
+    ctx.arc(joystick.startX, joystick.startY, 40, 0, Math.PI*2);
+    ctx.fill();
+    ctx.globalAlpha = 0.7;
+    ctx.beginPath();
+    ctx.arc(joystick.x, joystick.y, 30, 0, Math.PI*2);
+    ctx.fill();
+    ctx.restore();
+  }
+
+  function drawMinimap() {
+    const mapSize = 120;
+    const cellSize = mapSize / mapWidth;
+    const offsetX = width - mapSize - 10;
+    const offsetY = 10;
+
+    ctx.save();
+    ctx.fillStyle = '#ccc';
+    ctx.fillRect(offsetX, offsetY, mapSize, mapSize);
+
+    // Draw maze cells
+    for(let y=0; y<mapHeight; y++) {
+      for(let x=0; x<mapWidth; x++) {
+        if(maze[y][x] === 0) {
+          ctx.fillStyle = '#222';
+        } else {
+          ctx.fillStyle = '#eee';
+        }
+        ctx.fillRect(offsetX + x*cellSize, offsetY + y*cellSize, cellSize, cellSize);
+      }
+    }
+
+    // Draw exit
+    ctx.fillStyle = 'green';
+    ctx.fillRect(offsetX + exitX*cellSize, offsetY + exitY*cellSize, cellSize, cellSize);
+
+    // Draw player
+    ctx.fillStyle = 'blue';
+    const pxOnMap = offsetX + (px / tileSize) * cellSize;
+    const pyOnMap = offsetY + (py / tileSize) * cellSize;
+    ctx.beginPath();
+    ctx.arc(pxOnMap, pyOnMap, cellSize/4, 0, Math.PI*2);
+    ctx.fill();
+
+    // Draw direction line
+    ctx.strokeStyle = 'blue';
+    ctx.beginPath();
+    ctx.moveTo(pxOnMap, pyOnMap);
+    ctx.lineTo(pxOnMap + Math.cos(direction)*cellSize/2, pyOnMap + Math.sin(direction)*cellSize/2);
+    ctx.stroke();
+
+    ctx.restore();
+  }
+
+  function render3D() {
     ctx.clearRect(0, 0, width, height);
-
     const numRays = width;
-    const angleStep = fov / numRays;
-
     for(let i=0; i<numRays; i++) {
-      const rayAngle = direction - fov/2 + angleStep * i;
+      let rayScreenPos = (i / numRays) - 0.5;
+      let rayAngle = direction + rayScreenPos * fov;
       const ray = castRay(rayAngle);
+      let correctedDist = ray.dist * Math.cos(rayAngle - direction); // fix fish-eye
 
-      // fix fish-eye
-      const fixDist = ray.dist * Math.cos(rayAngle - direction);
-
-      let wallHeight = (tileSize * 6 * height) / fixDist;
+      let wallHeight = (tileSize * height) / correctedDist;
       if(wallHeight > height) wallHeight = height;
 
       ctx.fillStyle = ray.color;
-      ctx.fillRect(i, (height - wallHeight) / 2, 1, wallHeight);
-    }
+      ctx.fillRect(i, (height - wallHeight)/2, 1, wallHeight);
 
-    // Draw exit square at the bottom left
-    ctx.fillStyle = 'lime';
-    ctx.fillRect(exitX * tileSize, exitY * tileSize, tileSize, tileSize);
-
-    // Draw joystick if active
-    if(joystick.active) {
-      ctx.strokeStyle = 'rgba(0,255,0,0.7)';
-      ctx.lineWidth = 3;
-      ctx.beginPath();
-      ctx.arc(joystick.startX, joystick.startY, 40, 0, Math.PI*2);
-      ctx.stroke();
-
-      ctx.beginPath();
-      ctx.arc(joystick.x, joystick.y, 30, 0, Math.PI*2);
-      ctx.stroke();
+      // Floor & ceiling simple shading
+      ctx.fillStyle = '#444';
+      ctx.fillRect(i, (height + wallHeight)/2, 1, height);
+      ctx.fillStyle = '#222';
+      ctx.fillRect(i, 0, 1, (height - wallHeight)/2);
     }
   }
 
-  let lastTime = 0;
-  function loop(time = 0) {
-    const dt = (time - lastTime) / 1000;
-    lastTime = time;
+  function checkWin() {
+    const cellX = Math.floor(px / tileSize);
+    const cellY = Math.floor(py / tileSize);
+    if(cellX === exitX && cellY === exitY) {
+      alert("You escaped the maze! 🎉");
+      setupGame();
+    }
+  }
 
-    update(dt);
-    render();
+  function loop() {
+    update();
+    render3D();
+    drawJoystick();
+    drawMinimap();
+    checkWin();
     requestAnimationFrame(loop);
   }
 
   setupGame();
   loop();
-
 })();
 </script>
 </body>
