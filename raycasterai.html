@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no" />
-<title>3D Raycasting Maze - Dual Joysticks</title>
+<title>3D Raycasting Maze - One Joystick & Slow Camera</title>
 <style>
   body, html {
     margin: 0; padding: 0; overflow: hidden; background: #111;
@@ -209,15 +209,8 @@
     keys[e.key.toLowerCase()] = false;
   });
 
-  // Dual joystick support
-  let leftJoystick = {
-    active: false,
-    startX: 0,
-    startY: 0,
-    x: 0,
-    y: 0
-  };
-  let rightJoystick = {
+  // One joystick on bottom left (movement)
+  let joystick = {
     active: false,
     startX: 0,
     startY: 0,
@@ -225,37 +218,37 @@
     y: 0
   };
 
+  // Track right half dragging for camera rotation
+  let cameraDrag = {
+    active: false,
+    lastX: 0
+  };
+
   canvas.addEventListener('touchstart', e => {
     for(let touch of e.changedTouches) {
-      if(touch.clientX < width/2 && touch.clientY > height/2 && !leftJoystick.active) {
-        leftJoystick.active = true;
-        leftJoystick.startX = touch.clientX;
-        leftJoystick.startY = touch.clientY;
-        leftJoystick.x = touch.clientX;
-        leftJoystick.y = touch.clientY;
-      } else if(touch.clientX >= width/2 && touch.clientY > height/2 && !rightJoystick.active) {
-        rightJoystick.active = true;
-        rightJoystick.startX = touch.clientX;
-        rightJoystick.startY = touch.clientY;
-        rightJoystick.x = touch.clientX;
-        rightJoystick.y = touch.clientY;
+      if(touch.clientX < width/2 && touch.clientY > height/2 && !joystick.active) {
+        joystick.active = true;
+        joystick.startX = touch.clientX;
+        joystick.startY = touch.clientY;
+        joystick.x = touch.clientX;
+        joystick.y = touch.clientY;
+      } else if(touch.clientX >= width/2 && !cameraDrag.active) {
+        cameraDrag.active = true;
+        cameraDrag.lastX = touch.clientX;
       }
     }
   }, {passive:false});
 
   canvas.addEventListener('touchmove', e => {
     for(let touch of e.changedTouches) {
-      if(leftJoystick.active && Math.abs(touch.clientX - leftJoystick.startX) < 1000 &&
-         Math.abs(touch.clientY - leftJoystick.startY) < 1000 &&
-         touch.identifier === e.touches[0].identifier) {
-        leftJoystick.x = touch.clientX;
-        leftJoystick.y = touch.clientY;
+      if(joystick.active && touch.clientX === joystick.x && touch.clientY === joystick.y) {
+        joystick.x = touch.clientX;
+        joystick.y = touch.clientY;
         e.preventDefault();
-      } else if(rightJoystick.active && Math.abs(touch.clientX - rightJoystick.startX) < 1000 &&
-                Math.abs(touch.clientY - rightJoystick.startY) < 1000 &&
-                touch.identifier === e.touches[0].identifier) {
-        rightJoystick.x = touch.clientX;
-        rightJoystick.y = touch.clientY;
+      } else if(cameraDrag.active && touch.clientX >= width/2) {
+        let dx = touch.clientX - cameraDrag.lastX;
+        direction += dx * 0.02; // VERY LOW sensitivity
+        cameraDrag.lastX = touch.clientX;
         e.preventDefault();
       }
     }
@@ -263,18 +256,18 @@
 
   canvas.addEventListener('touchend', e => {
     for(let touch of e.changedTouches) {
-      if(leftJoystick.active && touch.clientX === leftJoystick.x && touch.clientY === leftJoystick.y) {
-        leftJoystick.active = false;
+      if(joystick.active && touch.clientX === joystick.x && touch.clientY === joystick.y) {
+        joystick.active = false;
       }
-      if(rightJoystick.active && touch.clientX === rightJoystick.x && touch.clientY === rightJoystick.y) {
-        rightJoystick.active = false;
+      if(cameraDrag.active) {
+        cameraDrag.active = false;
       }
     }
   });
 
   function update(dt) {
     const speed = 120 * dt;
-    const rotationSpeed = 1.2 * dt; // default keyboard rotation speed
+    const rotationSpeed = 1.2 * dt; // keyboard rotation speed
 
     // Keyboard rotation
     if(keys['a'] || keys['arrowleft']) {
@@ -305,12 +298,11 @@
     }
     movePlayer(moveX, moveY);
 
-    // Left joystick movement (strafe + forward/back)
-    if(leftJoystick.active) {
-      const dx = (leftJoystick.x - leftJoystick.startX) / 50;
-      const dy = (leftJoystick.y - leftJoystick.startY) / 50;
+    // Joystick movement
+    if(joystick.active) {
+      const dx = (joystick.x - joystick.startX) / 50;
+      const dy = (joystick.y - joystick.startY) / 50;
 
-      // y-axis inverted: pushing up (y < 0) means forward
       const forward = -dy * speed;
       const strafe = dx * speed;
 
@@ -318,12 +310,6 @@
         Math.cos(direction) * forward + Math.cos(direction + Math.PI/2) * strafe,
         Math.sin(direction) * forward + Math.sin(direction + Math.PI/2) * strafe
       );
-    }
-
-    // Right joystick controls rotation - SENSITIVITY LOWERED A LOT
-    if(rightJoystick.active) {
-      const dx = (rightJoystick.x - rightJoystick.startX) / 300; // sensitivity lower
-      direction += dx;
     }
   }
 
@@ -351,29 +337,16 @@
     ctx.fillStyle = 'lime';
     ctx.fillRect(exitX * tileSize, exitY * tileSize, tileSize, tileSize);
 
-    // Draw left joystick
-    if(leftJoystick.active) {
+    // Draw joystick if active
+    if(joystick.active) {
       ctx.strokeStyle = 'rgba(0,255,0,0.7)';
       ctx.lineWidth = 3;
       ctx.beginPath();
-      ctx.arc(leftJoystick.startX, leftJoystick.startY, 40, 0, Math.PI*2);
+      ctx.arc(joystick.startX, joystick.startY, 40, 0, Math.PI*2);
       ctx.stroke();
 
       ctx.beginPath();
-      ctx.arc(leftJoystick.x, leftJoystick.y, 30, 0, Math.PI*2);
-      ctx.stroke();
-    }
-
-    // Draw right joystick
-    if(rightJoystick.active) {
-      ctx.strokeStyle = 'rgba(0,0,255,0.7)';
-      ctx.lineWidth = 3;
-      ctx.beginPath();
-      ctx.arc(rightJoystick.startX, rightJoystick.startY, 40, 0, Math.PI*2);
-      ctx.stroke();
-
-      ctx.beginPath();
-      ctx.arc(rightJoystick.x, rightJoystick.y, 30, 0, Math.PI*2);
+      ctx.arc(joystick.x, joystick.y, 30, 0, Math.PI*2);
       ctx.stroke();
     }
   }
