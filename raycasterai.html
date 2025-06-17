@@ -1,185 +1,130 @@
 <!DOCTYPE html>
-<html lang="en" >
+<html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no" />
-  <title>Procedural Maze Raycasting Game</title>
-  <style>
-    body {
-      margin: 0;
-      background: #222;
-      color: #eee;
-      font-family: monospace;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      height: 100vh;
-      overflow: hidden;
-    }
-    svg#view {
-      width: 100vw;
-      height: 50vh;
-      max-height: 320px;
-      background: #111;
-      user-select: none;
-      touch-action: none;
-    }
-    svg#map {
-      margin-top: 10px;
-      background: #444;
-      width: 90vw;
-      max-width: 400px;
-      height: 40vh;
-      max-height: 400px;
-      border: 2px solid #666;
-    }
-    #controls {
-      position: fixed;
-      bottom: 10px;
-      width: 100vw;
-      display: flex;
-      justify-content: space-around;
-      pointer-events: none;
-    }
-    .joystick {
-      width: 120px;
-      height: 120px;
-      background: rgba(255,255,255,0.1);
-      border-radius: 50%;
-      pointer-events: auto;
-      touch-action: none;
-      user-select: none;
-      position: relative;
-    }
-    .knob {
-      width: 60px;
-      height: 60px;
-      background: rgba(255,255,255,0.3);
-      border-radius: 50%;
-      position: absolute;
-      top: 30px;
-      left: 30px;
-      transition: background 0.2s;
-    }
-    #message {
-      position: fixed;
-      top: 10px;
-      left: 50%;
-      transform: translateX(-50%);
-      background: rgba(0,0,0,0.7);
-      padding: 10px 20px;
-      border-radius: 8px;
-      font-size: 1.4em;
-      color: #0f0;
-      display: none;
-      user-select: none;
-      pointer-events: none;
-      z-index: 10;
-    }
-  </style>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no" />
+<title>3D Raycasting Maze - Mobile Friendly</title>
+<style>
+  body, html {
+    margin: 0; padding: 0; overflow: hidden; background: #111;
+    touch-action: none;
+    -webkit-tap-highlight-color: transparent;
+  }
+  canvas {
+    display: block;
+    margin: 0 auto;
+    background: #222;
+  }
+</style>
 </head>
 <body>
-
-<svg id="view" viewBox="0 0 600 300"></svg>
-<svg id="map" viewBox="0 0 400 400">
-  <!-- maze walls drawn dynamically -->
-  <circle id="player-map" r="6" fill="#0f0"/>
-  <line id="player-dir" stroke="#0f0" stroke-width="3"/>
-  <rect id="exit-cell" width="40" height="40" fill="gold" />
-</svg>
-
-<div id="message">You Win! 🎉 Reload to play again.</div>
-
-<div id="controls">
-  <div id="move-joystick" class="joystick">
-    <div class="knob"></div>
-  </div>
-  <div id="look-joystick" class="joystick">
-    <div class="knob"></div>
-  </div>
-</div>
+<canvas id="game"></canvas>
 
 <script>
-  const view = document.getElementById('view');
-  const mapSVG = document.getElementById('map');
-  const playerMap = document.getElementById('player-map');
-  const playerDirLine = document.getElementById('player-dir');
-  const exitCell = document.getElementById('exit-cell');
-  const message = document.getElementById('message');
+(() => {
+  const canvas = document.getElementById('game');
+  const ctx = canvas.getContext('2d');
 
-  const tileSize = 40;
-  const mapWidth = 10;
-  const mapHeight = 10;
+  let width, height;
+  function resize() {
+    width = window.innerWidth;
+    height = window.innerHeight;
+    canvas.width = width;
+    canvas.height = height;
+  }
+  window.addEventListener('resize', resize);
+  resize();
 
-  // Maze grid: 0 = wall, 1 = path
-  let maze;
+  const tileSize = 64;
+  const mapWidth = 15;
+  const mapHeight = 15;
 
-  // Player start position & direction
-  let px, py;
-  let direction = 0;
-  const fov = Math.PI / 3;
-
-  // Exit cell coords
+  let maze = [];
+  let px, py;       // player position (pixels)
+  let direction;    // player view direction (radians)
+  let fov = Math.PI / 3;
   let exitX, exitY;
 
-  const sliceCount = 120;
-  const viewWidth = 600;
-  const viewHeight = 300;
-
-  // Movement & rotation control vars
-  let moveX = 0;
-  let lookX = 0;
-  const moveSpeed = 2.5;
-  const rotSpeed = 0.05;
-
-  // Generate maze using Recursive Backtracker
-  // Maze cells: odd indexes are paths, even are walls
+  // Generate maze with recursive backtracking
   function generateMaze(w, h) {
     const maze = [];
-    for(let y=0; y<h; y++) {
+    for (let y=0; y<h; y++) {
       maze[y] = [];
       for(let x=0; x<w; x++) {
-        maze[y][x] = 0; // start all walls
+        maze[y][x] = 0;
       }
     }
 
-    function shuffle(arr) {
-      for(let i=arr.length-1; i>0; i--) {
-        let j = Math.floor(Math.random()*(i+1));
-        [arr[i],arr[j]] = [arr[j],arr[i]];
-      }
-      return arr;
+    // Fill borders with walls
+    for(let x=0; x<w; x++) {
+      maze[0][x] = 1;
+      maze[h-1][x] = 1;
+    }
+    for(let y=0; y<h; y++) {
+      maze[y][0] = 1;
+      maze[y][w-1] = 1;
     }
 
-    function carve(x, y) {
-      maze[y][x] = 1;
-      let directions = shuffle([[2,0],[-2,0],[0,2],[0,-2]]);
-      for(let [dx, dy] of directions) {
-        let nx = x + dx;
-        let ny = y + dy;
-        if(ny > 0 && ny < h-1 && nx > 0 && nx < w-1 && maze[ny][nx] === 0) {
-          maze[ y + dy/2 ][ x + dx/2 ] = 1;
+    // Recursive backtracking carve paths
+    function carve(x,y){
+      const directions = [[2,0],[-2,0],[0,2],[0,-2]];
+      shuffle(directions);
+      for(let [dx,dy] of directions) {
+        let nx = x+dx;
+        let ny = y+dy;
+        if(nx > 0 && nx < w-1 && ny > 0 && ny < h-1 && maze[ny][nx] === 0) {
+          maze[ny][nx] = 1;
+          maze[y + dy/2][x + dx/2] = 1;
           carve(nx, ny);
         }
       }
     }
 
-    carve(1, 1);
+    // Start carving from (1,1)
+    maze[1][1] = 1;
+    carve(1,1);
+
     return maze;
   }
 
-  // Create maze and spawn player
+  function shuffle(arr) {
+    for(let i=arr.length-1; i>0; i--){
+      const j = Math.floor(Math.random()*(i+1));
+      [arr[i], arr[j]] = [arr[j], arr[i]];
+    }
+  }
+
+  // Check if pixel position is inside a wall
+  function isWallAt(px, py) {
+    if(px < 0 || py < 0 || px >= mapWidth*tileSize || py >= mapHeight*tileSize) return true;
+    let x = Math.floor(px / tileSize);
+    let y = Math.floor(py / tileSize);
+    return maze[y][x] === 0;
+  }
+
+  // Generate palette of 3 colors for walls
+  function generatePalette() {
+    const baseHue = Math.floor(Math.random() * 360);
+    return [
+      `hsl(${baseHue}, 70%, 40%)`,
+      `hsl(${(baseHue + 30) % 360}, 60%, 50%)`,
+      `hsl(${(baseHue + 60) % 360}, 50%, 60%)`
+    ];
+  }
+
+  let palette;
+
   function setupGame() {
     maze = generateMaze(mapWidth, mapHeight);
+    palette = generatePalette();
 
-    // Spawn player at entrance (1,1)
-    px = 1 * tileSize + tileSize / 2;
-    py = 1 * tileSize + tileSize / 2;
+    px = 1 * tileSize + tileSize/2;
+    py = 1 * tileSize + tileSize/2;
     direction = 0;
 
-    // Exit at bottom right open cell (search backward for first path)
-    for(let y = mapHeight-2; y>0; y--) {
-      for(let x = mapWidth-2; x>0; x--) {
+    // Find exit: bottom-right open cell
+    for(let y=mapHeight-2; y>0; y--) {
+      for(let x=mapWidth-2; x>0; x--) {
         if(maze[y][x] === 1) {
           exitX = x;
           exitY = y;
@@ -189,20 +134,13 @@
     }
   }
 
-  function isWallAt(x, y) {
-    if(x < 0 || y < 0) return true;
-    const mx = Math.floor(x / tileSize);
-    const my = Math.floor(y / tileSize);
-    if(my >= mapHeight || mx >= mapWidth) return true;
-    return maze[my][mx] === 0;
-  }
-
-  // Raycasting function with color based on hit wall side
+  // Raycasting to find wall distance and color
   function castRay(angle) {
-    const maxDist = 600;
-    const step = 1.5;
+    const maxDist = 1000;
+    const step = 2;
     let dist = 0;
     let hitX, hitY;
+
     while(dist < maxDist) {
       dist += step;
       const rx = px + dist * Math.cos(angle);
@@ -215,214 +153,215 @@
     }
     if(!hitX) return {dist: maxDist, color: 'black'};
 
-    // Determine wall color by checking hit cell neighbors
     const cellX = Math.floor(hitX / tileSize);
     const cellY = Math.floor(hitY / tileSize);
 
-    // Check if hit near vertical or horizontal wall by looking a bit offset
     const offsetX = hitX - cellX * tileSize;
     const offsetY = hitY - cellY * tileSize;
 
     let color;
-    if(offsetX < 2) color = '#cc2222';       // Left wall red
-    else if(offsetX > tileSize - 2) color = '#ee5555'; // Right wall lighter red
-    else if(offsetY < 2) color = '#229922';  // Top wall green
-    else if(offsetY > tileSize - 2) color = '#55ee55'; // Bottom wall lighter green
-    else color = '#888888';
+    if(offsetX < 2) color = palette[0];          // left wall
+    else if(offsetX > tileSize - 2) color = palette[1];  // right wall
+    else if(offsetY < 2) color = palette[2];    // top wall
+    else if(offsetY > tileSize - 2) color = palette[1];  // bottom wall
+    else color = palette[0];
 
     return {dist, color};
   }
 
-  // Draw wall slice with color and brightness
-  function drawSlice(index, height, color, brightness) {
-    const sliceWidth = viewWidth / sliceCount;
-    let old = document.getElementById('slice' + index);
-    if(old) view.removeChild(old);
-    const rect = document.createElementNS("http://www.w3.org/2000/svg", "rect");
-    rect.setAttribute('id', 'slice' + index);
-    rect.setAttribute('x', index * sliceWidth);
-    rect.setAttribute('width', sliceWidth + 1);
-    rect.setAttribute('y', (viewHeight - height) / 2);
-    rect.setAttribute('height', height);
-    // Apply brightness to color (simple way)
-    const col = hexToRgb(color);
-    const r = Math.floor(col.r * brightness / 255);
-    const g = Math.floor(col.g * brightness / 255);
-    const b = Math.floor(col.b * brightness / 255);
-    rect.setAttribute('fill', `rgb(${r},${g},${b})`);
-    view.appendChild(rect);
-  }
-
-  // Simple hex to rgb helper
-  function hexToRgb(hex) {
-    const m = hex.match(/^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i);
-    return m ? {
-      r: parseInt(m[1], 16),
-      g: parseInt(m[2], 16),
-      b: parseInt(m[3], 16)
-    } : {r:0,g:0,b:0};
-  }
-
-  // Draw maze map
-  function drawMap() {
-    [...mapSVG.querySelectorAll('.wall')].forEach(e => e.remove());
-    for(let y=0; y<mapHeight; y++) {
-      for(let x=0; x<mapWidth; x++) {
-        if(maze[y][x] === 0) {
-          const rect = document.createElementNS("http://www.w3.org/2000/svg", "rect");
-          rect.classList.add('wall');
-          rect.setAttribute('x', x * tileSize);
-          rect.setAttribute('y', y * tileSize);
-          rect.setAttribute('width', tileSize);
-          rect.setAttribute('height', tileSize);
-          rect.setAttribute('fill', '#555');
-          mapSVG.appendChild(rect);
-        }
-      }
-    }
-    // Show exit cell
-    exitCell.setAttribute('x', exitX * tileSize);
-    exitCell.setAttribute('y', exitY * tileSize);
-  }
-
-  // Render 3D view
-  function render3DView() {
-    for(let i = 0; i < sliceCount; i++) {
-      let rayAngle = direction - fov / 2 + (i / sliceCount) * fov;
-      let {dist, color} = castRay(rayAngle);
-      let correctedDist = dist * Math.cos(rayAngle - direction);
-      let wallHeight = Math.min(30000 / correctedDist, viewHeight);
-      let brightness = Math.max(0, 255 - correctedDist * 0.6);
-      brightness = Math.floor(brightness);
-      drawSlice(i, wallHeight, color, brightness);
-    }
-  }
-
-  // Update player marker on map
-  function updateMap() {
-    playerMap.setAttribute('cx', px);
-    playerMap.setAttribute('cy', py);
-    const dx = Math.cos(direction) * 20;
-    const dy = Math.sin(direction) * 20;
-    playerDirLine.setAttribute('x1', px);
-    playerDirLine.setAttribute('y1', py);
-    playerDirLine.setAttribute('x2', px + dx);
-    playerDirLine.setAttribute('y2', py + dy);
-  }
-
-  // Move player with collision radius
+  // Smooth gliding collision movement
   function movePlayer(dx, dy) {
+    const radius = 10;
+
     let newX = px + dx;
     let newY = py + dy;
-    const radius = 8;
+
     if(!isWallAt(newX + radius, newY + radius) &&
        !isWallAt(newX - radius, newY + radius) &&
        !isWallAt(newX + radius, newY - radius) &&
        !isWallAt(newX - radius, newY - radius)) {
       px = newX;
       py = newY;
+      return;
     }
+
+    // Try only X movement
+    newX = px + dx;
+    newY = py;
+    if(!isWallAt(newX + radius, newY + radius) &&
+       !isWallAt(newX - radius, newY + radius) &&
+       !isWallAt(newX + radius, newY - radius) &&
+       !isWallAt(newX - radius, newY - radius)) {
+      px = newX;
+      return;
+    }
+
+    // Try only Y movement
+    newX = px;
+    newY = py + dy;
+    if(!isWallAt(newX + radius, newY + radius) &&
+       !isWallAt(newX - radius, newY + radius) &&
+       !isWallAt(newX + radius, newY - radius) &&
+       !isWallAt(newX - radius, newY - radius)) {
+      py = newY;
+      return;
+    }
+
+    // Blocked, no movement
   }
 
-  // Check win condition (player close enough to exit)
-  function checkWin() {
-    const exitCenterX = exitX * tileSize + tileSize / 2;
-    const exitCenterY = exitY * tileSize + tileSize / 2;
-    const distX = px - exitCenterX;
-    const distY = py - exitCenterY;
-    const dist = Math.sqrt(distX*distX + distY*distY);
-    if(dist < 12) {
-      message.style.display = 'block';
-      return true;
-    }
-    return false;
-  }
-
-  // Joystick helper (same as previous)
-  function setupJoystick(container, onChange) {
-    let active = false;
-    let rect = container.getBoundingClientRect();
-    let centerX = rect.left + rect.width / 2;
-    let centerY = rect.top + rect.height / 2;
-
-    function updateCenter() {
-      rect = container.getBoundingClientRect();
-      centerX = rect.left + rect.width / 2;
-      centerY = rect.top + rect.height / 2;
-    }
-
-    let pointerId = null;
-
-    function onPointerDown(e) {
-      if(pointerId !== null) return;
-      pointerId = e.pointerId;
-      active = true;
-      updateCenter();
-      onMove(e.clientX, e.clientY);
+  // Handle input
+  let keys = {};
+  window.addEventListener('keydown', e => {
+    keys[e.key.toLowerCase()] = true;
+    if(['arrowup','arrowdown','arrowleft','arrowright'].includes(e.key.toLowerCase())) {
       e.preventDefault();
     }
-    function onPointerMove(e) {
-      if(!active || e.pointerId !== pointerId) return;
-      onMove(e.clientX, e.clientY);
-      e.preventDefault();
-    }
-    function onPointerUp(e) {
-      if(e.pointerId !== pointerId) return;
-      pointerId = null;
-      active = false;
-      onChange(0, 0);
-      e.preventDefault();
-    }
-
-    function onMove(x, y) {
-      let dx = x - centerX;
-      let dy = y - centerY;
-      const maxDist = rect.width / 2;
-      if(dx > maxDist) dx = maxDist;
-      if(dx < -maxDist) dx = -maxDist;
-      if(dy > maxDist) dy = maxDist;
-      if(dy < -maxDist) dy = -maxDist;
-      const normX = dx / maxDist;
-      const normY = dy / maxDist;
-      onChange(normX, normY);
-
-      const knob = container.querySelector('.knob');
-      knob.style.transform = `translate(${dx}px, ${dy}px)`;
-    }
-
-    container.addEventListener('pointerdown', onPointerDown);
-    window.addEventListener('pointermove', onPointerMove);
-    window.addEventListener('pointerup', onPointerUp);
-    window.addEventListener('pointercancel', onPointerUp);
-  }
-
-  setupJoystick(document.getElementById('move-joystick'), (x,y) => {
-    moveX = -y;
   });
-  setupJoystick(document.getElementById('look-joystick'), (x,y) => {
-    lookX = x;
+  window.addEventListener('keyup', e => {
+    keys[e.key.toLowerCase()] = false;
   });
 
-  // Main game loop
-  function gameLoop() {
-    if(checkWin()) return; // stop game on win
+  // For mobile: simple touch joystick in bottom-left
+  let touchX = null;
+  let touchY = null;
+  let joystickActive = false;
 
-    direction += lookX * rotSpeed;
+  canvas.addEventListener('touchstart', e => {
+    const t = e.touches[0];
+    if(t.clientX < width/2 && t.clientY > height/2) {
+      joystickActive = true;
+      touchX = t.clientX;
+      touchY = t.clientY;
+    }
+  }, {passive:false});
 
-    const dx = Math.cos(direction) * moveX * moveSpeed;
-    const dy = Math.sin(direction) * moveX * moveSpeed;
-    movePlayer(dx, dy);
+  canvas.addEventListener('touchmove', e => {
+    if(joystickActive) {
+      const t = e.touches[0];
+      touchX = t.clientX;
+      touchY = t.clientY;
+      e.preventDefault();
+    }
+  }, {passive:false});
 
-    render3DView();
-    updateMap();
+  canvas.addEventListener('touchend', e => {
+    joystickActive = false;
+    touchX = null;
+    touchY = null;
+  });
 
-    requestAnimationFrame(gameLoop);
+  // Game loop
+  function update(dt) {
+    const speed = 120 * dt;
+
+    // WASD or arrow keys control forward/back and turn left/right
+    if(keys['a'] || keys['arrowleft']) {
+      direction -= 2 * dt;
+    }
+    if(keys['d'] || keys['arrowright']) {
+      direction += 2 * dt;
+    }
+
+    let moveForward = 0;
+    if(keys['w'] || keys['arrowup']) moveForward = 1;
+    else if(keys['s'] || keys['arrowdown']) moveForward = -1;
+
+    if(moveForward !== 0) {
+      const dx = Math.cos(direction) * speed * moveForward;
+      const dy = Math.sin(direction) * speed * moveForward;
+      movePlayer(dx, dy);
+    }
+
+    // Mobile joystick overrides movement/rotation
+    if(joystickActive && touchX !== null && touchY !== null) {
+      const centerX = width/4;
+      const centerY = height*0.75;
+      const dx = touchX - centerX;
+      const dy = touchY - centerY;
+
+      // Angle of joystick from center
+      const angle = Math.atan2(dy, dx);
+      const dist = Math.min(Math.sqrt(dx*dx + dy*dy), 50);
+
+      // Rotate player based on horizontal joystick motion
+      direction += dx * 0.002;
+
+      // Move player forward/back based on vertical joystick motion
+      const moveSpeed = ( -dy / 50 ) * speed;
+      const mvx = Math.cos(direction) * moveSpeed;
+      const mvy = Math.sin(direction) * moveSpeed;
+      movePlayer(mvx, mvy);
+    }
+  }
+
+  function draw() {
+    ctx.clearRect(0, 0, width, height);
+
+    // Draw sky and floor
+    const horizon = height/2;
+    const skyGradient = ctx.createLinearGradient(0, 0, 0, horizon);
+    skyGradient.addColorStop(0, '#87CEEB');
+    skyGradient.addColorStop(1, '#555');
+    ctx.fillStyle = skyGradient;
+    ctx.fillRect(0, 0, width, horizon);
+
+    ctx.fillStyle = '#444';
+    ctx.fillRect(0, horizon, width, height - horizon);
+
+    // Raycasting
+    const numRays = width;
+    const rayStep = fov / numRays;
+
+    for(let i=0; i<numRays; i++) {
+      const rayAngle = direction - fov/2 + i * rayStep;
+      const ray = castRay(rayAngle);
+
+      // Fix fish-eye by cosine correction
+      const correctedDist = ray.dist * Math.cos(rayAngle - direction);
+
+      // Calculate wall height (distance projection)
+      const wallHeight = (tileSize * height) / correctedDist;
+
+      ctx.fillStyle = ray.color;
+      ctx.fillRect(i, horizon - wallHeight/2, 1, wallHeight);
+    }
+
+    // Draw simple HUD: player direction
+    ctx.fillStyle = 'white';
+    ctx.font = '14px monospace';
+    ctx.fillText(`Use WASD/Arrows or joystick (bottom-left)`, 10, 20);
+
+    // Draw joystick circle for mobile
+    if(joystickActive) {
+      const centerX = width/4;
+      const centerY = height*0.75;
+
+      ctx.strokeStyle = '#aaa';
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.arc(centerX, centerY, 50, 0, Math.PI*2);
+      ctx.stroke();
+
+      ctx.fillStyle = '#888';
+      ctx.beginPath();
+      ctx.arc(touchX, touchY, 30, 0, Math.PI*2);
+      ctx.fill();
+    }
+  }
+
+  let last = 0;
+  function loop(timestamp=0) {
+    const dt = (timestamp - last)/1000;
+    last = timestamp;
+    update(dt);
+    draw();
+    requestAnimationFrame(loop);
   }
 
   setupGame();
-  drawMap();
-  gameLoop();
+  loop();
+})();
 </script>
-
 </body>
 </html>
