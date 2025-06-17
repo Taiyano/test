@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no" />
-<title>3D Raycasting Maze - Mobile Friendly</title>
+<title>3D Raycasting Maze - Dual Joysticks</title>
 <style>
   body, html {
     margin: 0; padding: 0; overflow: hidden; background: #111;
@@ -45,7 +45,6 @@
   let fov = Math.PI / 3;
   let exitX, exitY;
 
-  // Generate maze with recursive backtracking
   function generateMaze(w, h) {
     const maze = [];
     for (let y=0; y<h; y++) {
@@ -55,7 +54,6 @@
       }
     }
 
-    // Fill borders with walls
     for(let x=0; x<w; x++) {
       maze[0][x] = 1;
       maze[h-1][x] = 1;
@@ -65,7 +63,6 @@
       maze[y][w-1] = 1;
     }
 
-    // Recursive backtracking carve paths
     function carve(x,y){
       const directions = [[2,0],[-2,0],[0,2],[0,-2]];
       shuffle(directions);
@@ -80,7 +77,6 @@
       }
     }
 
-    // Start carving from (1,1)
     maze[1][1] = 1;
     carve(1,1);
 
@@ -94,7 +90,6 @@
     }
   }
 
-  // Check if pixel position is inside a wall
   function isWallAt(px, py) {
     if(px < 0 || py < 0 || px >= mapWidth*tileSize || py >= mapHeight*tileSize) return true;
     let x = Math.floor(px / tileSize);
@@ -102,7 +97,6 @@
     return maze[y][x] === 0;
   }
 
-  // Generate palette of 3 colors for walls
   function generatePalette() {
     const baseHue = Math.floor(Math.random() * 360);
     return [
@@ -122,7 +116,6 @@
     py = 1 * tileSize + tileSize/2;
     direction = 0;
 
-    // Find exit: bottom-right open cell
     for(let y=mapHeight-2; y>0; y--) {
       for(let x=mapWidth-2; x>0; x--) {
         if(maze[y][x] === 1) {
@@ -134,7 +127,6 @@
     }
   }
 
-  // Raycasting to find wall distance and color
   function castRay(angle) {
     const maxDist = 1000;
     const step = 2;
@@ -169,7 +161,6 @@
     return {dist, color};
   }
 
-  // Smooth gliding collision movement
   function movePlayer(dx, dy) {
     const radius = 10;
 
@@ -185,7 +176,6 @@
       return;
     }
 
-    // Try only X movement
     newX = px + dx;
     newY = py;
     if(!isWallAt(newX + radius, newY + radius) &&
@@ -196,7 +186,6 @@
       return;
     }
 
-    // Try only Y movement
     newX = px;
     newY = py + dy;
     if(!isWallAt(newX + radius, newY + radius) &&
@@ -206,11 +195,9 @@
       py = newY;
       return;
     }
-
-    // Blocked, no movement
   }
 
-  // Handle input
+  // Keyboard input
   let keys = {};
   window.addEventListener('keydown', e => {
     keys[e.key.toLowerCase()] = true;
@@ -222,145 +209,188 @@
     keys[e.key.toLowerCase()] = false;
   });
 
-  // For mobile: simple touch joystick in bottom-left
-  let touchX = null;
-  let touchY = null;
-  let joystickActive = false;
+  // Dual joystick support
+  let leftJoystick = {
+    active: false,
+    startX: 0,
+    startY: 0,
+    x: 0,
+    y: 0
+  };
+  let rightJoystick = {
+    active: false,
+    startX: 0,
+    startY: 0,
+    x: 0,
+    y: 0
+  };
 
   canvas.addEventListener('touchstart', e => {
-    const t = e.touches[0];
-    if(t.clientX < width/2 && t.clientY > height/2) {
-      joystickActive = true;
-      touchX = t.clientX;
-      touchY = t.clientY;
+    for(let touch of e.changedTouches) {
+      if(touch.clientX < width/2 && touch.clientY > height/2 && !leftJoystick.active) {
+        leftJoystick.active = true;
+        leftJoystick.startX = touch.clientX;
+        leftJoystick.startY = touch.clientY;
+        leftJoystick.x = touch.clientX;
+        leftJoystick.y = touch.clientY;
+      } else if(touch.clientX >= width/2 && touch.clientY > height/2 && !rightJoystick.active) {
+        rightJoystick.active = true;
+        rightJoystick.startX = touch.clientX;
+        rightJoystick.startY = touch.clientY;
+        rightJoystick.x = touch.clientX;
+        rightJoystick.y = touch.clientY;
+      }
     }
   }, {passive:false});
 
   canvas.addEventListener('touchmove', e => {
-    if(joystickActive) {
-      const t = e.touches[0];
-      touchX = t.clientX;
-      touchY = t.clientY;
-      e.preventDefault();
+    for(let touch of e.changedTouches) {
+      if(leftJoystick.active && Math.abs(touch.clientX - leftJoystick.startX) < 1000 &&
+         Math.abs(touch.clientY - leftJoystick.startY) < 1000 &&
+         touch.identifier === e.touches[0].identifier) {
+        leftJoystick.x = touch.clientX;
+        leftJoystick.y = touch.clientY;
+        e.preventDefault();
+      } else if(rightJoystick.active && Math.abs(touch.clientX - rightJoystick.startX) < 1000 &&
+                Math.abs(touch.clientY - rightJoystick.startY) < 1000 &&
+                touch.identifier === e.touches[0].identifier) {
+        rightJoystick.x = touch.clientX;
+        rightJoystick.y = touch.clientY;
+        e.preventDefault();
+      }
     }
   }, {passive:false});
 
   canvas.addEventListener('touchend', e => {
-    joystickActive = false;
-    touchX = null;
-    touchY = null;
+    for(let touch of e.changedTouches) {
+      if(leftJoystick.active && touch.clientX === leftJoystick.x && touch.clientY === leftJoystick.y) {
+        leftJoystick.active = false;
+      }
+      if(rightJoystick.active && touch.clientX === rightJoystick.x && touch.clientY === rightJoystick.y) {
+        rightJoystick.active = false;
+      }
+    }
   });
 
-  // Game loop
   function update(dt) {
     const speed = 120 * dt;
+    const rotationSpeed = 1.2 * dt; // default keyboard rotation speed
 
-    // WASD or arrow keys control forward/back and turn left/right
+    // Keyboard rotation
     if(keys['a'] || keys['arrowleft']) {
-      direction -= 2 * dt;
+      direction -= rotationSpeed;
     }
     if(keys['d'] || keys['arrowright']) {
-      direction += 2 * dt;
+      direction += rotationSpeed;
     }
 
-    let moveForward = 0;
-    if(keys['w'] || keys['arrowup']) moveForward = 1;
-    else if(keys['s'] || keys['arrowdown']) moveForward = -1;
+    // Keyboard movement forward/back + strafe left/right
+    let moveX = 0;
+    let moveY = 0;
+    if(keys['w'] || keys['arrowup']) {
+      moveX += Math.cos(direction) * speed;
+      moveY += Math.sin(direction) * speed;
+    }
+    if(keys['s'] || keys['arrowdown']) {
+      moveX -= Math.cos(direction) * speed;
+      moveY -= Math.sin(direction) * speed;
+    }
+    if(keys['q']) { // strafe left
+      moveX += Math.cos(direction - Math.PI/2) * speed;
+      moveY += Math.sin(direction - Math.PI/2) * speed;
+    }
+    if(keys['e']) { // strafe right
+      moveX += Math.cos(direction + Math.PI/2) * speed;
+      moveY += Math.sin(direction + Math.PI/2) * speed;
+    }
+    movePlayer(moveX, moveY);
 
-    if(moveForward !== 0) {
-      const dx = Math.cos(direction) * speed * moveForward;
-      const dy = Math.sin(direction) * speed * moveForward;
-      movePlayer(dx, dy);
+    // Left joystick movement (strafe + forward/back)
+    if(leftJoystick.active) {
+      const dx = (leftJoystick.x - leftJoystick.startX) / 50;
+      const dy = (leftJoystick.y - leftJoystick.startY) / 50;
+
+      // y-axis inverted: pushing up (y < 0) means forward
+      const forward = -dy * speed;
+      const strafe = dx * speed;
+
+      movePlayer(
+        Math.cos(direction) * forward + Math.cos(direction + Math.PI/2) * strafe,
+        Math.sin(direction) * forward + Math.sin(direction + Math.PI/2) * strafe
+      );
     }
 
-    // Mobile joystick overrides movement/rotation
-    if(joystickActive && touchX !== null && touchY !== null) {
-      const centerX = width/4;
-      const centerY = height*0.75;
-      const dx = touchX - centerX;
-      const dy = touchY - centerY;
-
-      // Angle of joystick from center
-      const angle = Math.atan2(dy, dx);
-      const dist = Math.min(Math.sqrt(dx*dx + dy*dy), 50);
-
-      // Rotate player based on horizontal joystick motion
-      direction += dx * 0.002;
-
-      // Move player forward/back based on vertical joystick motion
-      const moveSpeed = ( -dy / 50 ) * speed;
-      const mvx = Math.cos(direction) * moveSpeed;
-      const mvy = Math.sin(direction) * moveSpeed;
-      movePlayer(mvx, mvy);
+    // Right joystick controls rotation - SENSITIVITY LOWERED A LOT
+    if(rightJoystick.active) {
+      const dx = (rightJoystick.x - rightJoystick.startX) / 300; // sensitivity lower
+      direction += dx;
     }
   }
 
-  function draw() {
+  function render() {
     ctx.clearRect(0, 0, width, height);
 
-    // Draw sky and floor
-    const horizon = height/2;
-    const skyGradient = ctx.createLinearGradient(0, 0, 0, horizon);
-    skyGradient.addColorStop(0, '#87CEEB');
-    skyGradient.addColorStop(1, '#555');
-    ctx.fillStyle = skyGradient;
-    ctx.fillRect(0, 0, width, horizon);
-
-    ctx.fillStyle = '#444';
-    ctx.fillRect(0, horizon, width, height - horizon);
-
-    // Raycasting
     const numRays = width;
-    const rayStep = fov / numRays;
+    const angleStep = fov / numRays;
 
     for(let i=0; i<numRays; i++) {
-      const rayAngle = direction - fov/2 + i * rayStep;
+      const rayAngle = direction - fov/2 + angleStep * i;
       const ray = castRay(rayAngle);
 
-      // Fix fish-eye by cosine correction
-      const correctedDist = ray.dist * Math.cos(rayAngle - direction);
+      // fix fish-eye
+      const fixDist = ray.dist * Math.cos(rayAngle - direction);
 
-      // Calculate wall height (distance projection)
-      const wallHeight = (tileSize * height) / correctedDist;
+      let wallHeight = (tileSize * 6 * height) / fixDist;
+      if(wallHeight > height) wallHeight = height;
 
       ctx.fillStyle = ray.color;
-      ctx.fillRect(i, horizon - wallHeight/2, 1, wallHeight);
+      ctx.fillRect(i, (height - wallHeight) / 2, 1, wallHeight);
     }
 
-    // Draw simple HUD: player direction
-    ctx.fillStyle = 'white';
-    ctx.font = '14px monospace';
-    ctx.fillText(`Use WASD/Arrows or joystick (bottom-left)`, 10, 20);
+    // Draw exit square at the bottom left
+    ctx.fillStyle = 'lime';
+    ctx.fillRect(exitX * tileSize, exitY * tileSize, tileSize, tileSize);
 
-    // Draw joystick circle for mobile
-    if(joystickActive) {
-      const centerX = width/4;
-      const centerY = height*0.75;
-
-      ctx.strokeStyle = '#aaa';
+    // Draw left joystick
+    if(leftJoystick.active) {
+      ctx.strokeStyle = 'rgba(0,255,0,0.7)';
       ctx.lineWidth = 3;
       ctx.beginPath();
-      ctx.arc(centerX, centerY, 50, 0, Math.PI*2);
+      ctx.arc(leftJoystick.startX, leftJoystick.startY, 40, 0, Math.PI*2);
       ctx.stroke();
 
-      ctx.fillStyle = '#888';
       ctx.beginPath();
-      ctx.arc(touchX, touchY, 30, 0, Math.PI*2);
-      ctx.fill();
+      ctx.arc(leftJoystick.x, leftJoystick.y, 30, 0, Math.PI*2);
+      ctx.stroke();
+    }
+
+    // Draw right joystick
+    if(rightJoystick.active) {
+      ctx.strokeStyle = 'rgba(0,0,255,0.7)';
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.arc(rightJoystick.startX, rightJoystick.startY, 40, 0, Math.PI*2);
+      ctx.stroke();
+
+      ctx.beginPath();
+      ctx.arc(rightJoystick.x, rightJoystick.y, 30, 0, Math.PI*2);
+      ctx.stroke();
     }
   }
 
-  let last = 0;
-  function loop(timestamp=0) {
-    const dt = (timestamp - last)/1000;
-    last = timestamp;
+  let lastTime = 0;
+  function loop(time = 0) {
+    const dt = (time - lastTime) / 1000;
+    lastTime = time;
+
     update(dt);
-    draw();
+    render();
     requestAnimationFrame(loop);
   }
 
   setupGame();
   loop();
+
 })();
 </script>
 </body>
