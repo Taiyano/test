@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no" />
-<title>Mobile Friendly SVG Raycasting</title>
+<title>3D SVG Raycasting Demo</title>
 <style>
   body {
     margin: 0;
@@ -11,119 +11,195 @@
     color: #eee;
     font-family: monospace;
     display: flex;
-    justify-content: center;
+    flex-direction: column;
     align-items: center;
-    height: 100vh;
   }
   svg {
     width: 100vw;
-    max-width: 400px;
-    height: auto;
-    background: #444;
-    border: 2px solid #666;
-    touch-action: none; /* prevent default scrolling on touch drag */
+    max-width: 600px;
+    height: 300px;
+    background: #111;
+    display: block;
     user-select: none;
+    touch-action: none;
+  }
+  #map {
+    margin-top: 10px;
+    background: #444;
+    width: 400px;
+    height: 400px;
+    border: 2px solid #666;
   }
 </style>
 </head>
 <body>
 
-<svg id="game" viewBox="0 0 400 400" >
-  <!-- Walls -->
+<svg id="view" viewBox="0 0 600 300" ></svg>
+<svg id="map" viewBox="0 0 400 400">
   <rect x="50" y="50" width="300" height="300" fill="none" stroke="#aaa" stroke-width="3"/>
   <rect x="150" y="150" width="100" height="100" fill="#555" />
-  
-  <!-- Player -->
-  <circle id="player" cx="100" cy="350" r="8" fill="#0f0"/>
-  
-  <!-- Rays -->
-  <g id="rays"></g>
+  <circle id="player-map" cx="100" cy="350" r="8" fill="#0f0"/>
+  <line id="player-dir" x1="100" y1="350" x2="100" y2="320" stroke="#0f0" stroke-width="3"/>
 </svg>
 
 <script>
-  const svg = document.getElementById('game');
-  const player = document.getElementById('player');
-  const raysGroup = document.getElementById('rays');
-  
+  const view = document.getElementById('view');
+  const map = document.getElementById('map');
+  const playerMap = document.getElementById('player-map');
+  const playerDirLine = document.getElementById('player-dir');
+
+  // Map walls as rectangles
   const walls = [
     {x:50, y:50, w:300, h:300},
     {x:150, y:150, w:100, h:100}
   ];
-  
+
+  // Player state
   let px = 100;
   let py = 350;
   let direction = -Math.PI / 2;
-  
-  function castRays() {
-    raysGroup.innerHTML = '';
-    const rayCount = 60;
-    const fov = Math.PI / 3;
-    for(let i = 0; i < rayCount; i++) {
-      let rayAngle = direction - fov/2 + (i / rayCount) * fov;
-      let rayLength = 0;
-      let hit = false;
-      const step = 2;
-      while(rayLength < 400 && !hit) {
-        rayLength += step;
-        let rx = px + rayLength * Math.cos(rayAngle);
-        let ry = py + rayLength * Math.sin(rayAngle);
-        for(let w of walls) {
-          if(rx >= w.x && rx <= w.x + w.w && ry >= w.y && ry <= w.y + w.h) {
-            hit = true;
-            rayLength -= step;
-            rx = px + rayLength * Math.cos(rayAngle);
-            ry = py + rayLength * Math.sin(rayAngle);
-            break;
-          }
+  const fov = Math.PI / 3; // 60 degrees FOV
+
+  // Number of vertical slices in the 3D view
+  const sliceCount = 120;
+  const viewWidth = 600;
+  const viewHeight = 300;
+
+  // Clear and draw a vertical slice (a rectangle) in the 3D view
+  function drawSlice(index, height, brightness) {
+    let sliceWidth = viewWidth / sliceCount;
+    // Remove old slice if any
+    let old = document.getElementById('slice' + index);
+    if (old) view.removeChild(old);
+
+    let rect = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+    rect.setAttribute('id', 'slice' + index);
+    rect.setAttribute('x', index * sliceWidth);
+    rect.setAttribute('width', sliceWidth + 1); // +1 to avoid gaps
+    rect.setAttribute('y', (viewHeight - height) / 2);
+    rect.setAttribute('height', height);
+    rect.setAttribute('fill', `rgb(${brightness},${brightness},${brightness})`);
+    view.appendChild(rect);
+  }
+
+  // Raycast function: return distance to nearest wall or max
+  function castRay(angle) {
+    let maxDistance = 600;
+    let step = 2;
+    let distance = 0;
+    while (distance < maxDistance) {
+      distance += step;
+      let rx = px + distance * Math.cos(angle);
+      let ry = py + distance * Math.sin(angle);
+
+      // Check collision with walls
+      for(let w of walls) {
+        if(rx >= w.x && rx <= w.x + w.w && ry >= w.y && ry <= w.y + w.h) {
+          return distance;
         }
       }
-      const line = document.createElementNS("http://www.w3.org/2000/svg", "line");
-      line.setAttribute('x1', px);
-      line.setAttribute('y1', py);
-      line.setAttribute('x2', px + rayLength * Math.cos(rayAngle));
-      line.setAttribute('y2', py + rayLength * Math.sin(rayAngle));
-      line.setAttribute('stroke', 'yellow');
-      line.setAttribute('stroke-opacity', 0.3);
-      raysGroup.appendChild(line);
+    }
+    return maxDistance;
+  }
+
+  function render3DView() {
+    for(let i = 0; i < sliceCount; i++) {
+      let rayAngle = direction - fov / 2 + (i / sliceCount) * fov;
+      let dist = castRay(rayAngle);
+
+      // Correct fish-eye effect by multiplying by cos of angle difference
+      let correctedDist = dist * Math.cos(rayAngle - direction);
+
+      // Calculate slice height (the closer, the taller)
+      let wallHeight = Math.min(30000 / correctedDist, viewHeight);
+
+      // Brightness: farther walls are darker
+      let brightness = Math.max(0, 255 - correctedDist * 0.6);
+      brightness = Math.floor(brightness);
+
+      drawSlice(i, wallHeight, brightness);
     }
   }
-  
-  castRays();
-  
-  // Touch controls for rotating player
+
+  function updateMap() {
+    playerMap.setAttribute('cx', px);
+    playerMap.setAttribute('cy', py);
+
+    let dx = Math.cos(direction) * 30;
+    let dy = Math.sin(direction) * 30;
+    playerDirLine.setAttribute('x1', px);
+    playerDirLine.setAttribute('y1', py);
+    playerDirLine.setAttribute('x2', px + dx);
+    playerDirLine.setAttribute('y2', py + dy);
+  }
+
+  function render() {
+    render3DView();
+    updateMap();
+  }
+
+  render();
+
+  // Touch controls to rotate player on #view
   let lastTouchX = null;
-  svg.addEventListener('touchstart', (e) => {
+  view.addEventListener('touchstart', (e) => {
     if(e.touches.length === 1) {
       lastTouchX = e.touches[0].clientX;
     }
   });
-  
-  svg.addEventListener('touchmove', (e) => {
+
+  view.addEventListener('touchmove', (e) => {
     if(e.touches.length === 1 && lastTouchX !== null) {
-      const currentX = e.touches[0].clientX;
-      const deltaX = currentX - lastTouchX;
+      let currentX = e.touches[0].clientX;
+      let deltaX = currentX - lastTouchX;
       lastTouchX = currentX;
-      // Rotate direction based on horizontal movement, tweak sensitivity here
       direction += deltaX * 0.005;
-      castRays();
+      render();
     }
-    e.preventDefault(); // prevent scrolling while dragging
+    e.preventDefault();
   });
-  
-  svg.addEventListener('touchend', () => {
+
+  view.addEventListener('touchend', () => {
     lastTouchX = null;
   });
-  
-  // Optional: also keep arrow key support for desktop
+
+  // Keyboard support for desktop
   window.addEventListener('keydown', e => {
     const rotSpeed = 0.1;
     if(e.key === 'ArrowLeft') {
       direction -= rotSpeed;
+      render();
     } else if(e.key === 'ArrowRight') {
       direction += rotSpeed;
+      render();
+    } else if(e.key === 'ArrowUp') {
+      // Move forward
+      let nx = px + Math.cos(direction) * 5;
+      let ny = py + Math.sin(direction) * 5;
+      if(!isColliding(nx, ny)) {
+        px = nx; py = ny;
+      }
+      render();
+    } else if(e.key === 'ArrowDown') {
+      // Move backward
+      let nx = px - Math.cos(direction) * 5;
+      let ny = py - Math.sin(direction) * 5;
+      if(!isColliding(nx, ny)) {
+        px = nx; py = ny;
+      }
+      render();
     }
-    castRays();
   });
+
+  // Collision detection: returns true if (x,y) hits wall
+  function isColliding(x, y) {
+    for(let w of walls) {
+      if(x >= w.x && x <= w.x + w.w && y >= w.y && y <= w.y + w.h) {
+        return true;
+      }
+    }
+    return false;
+  }
 </script>
 
 </body>
